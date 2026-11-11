@@ -1,0 +1,53 @@
+name: Validate
+
+on:
+  push:
+    branches: [main, development]
+  pull_request:
+    branches: [main, development]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # The job's name is the check main's protection requires: renaming it
+  # unprotects main.
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Antigravity reads the plugin as its Marketplace does
+        # Exact-pinned and verified: the validator carries Antigravity's
+        # contract, and a floating version would change what this check
+        # means between two runs. The URL and its SHA-512 are one build
+        # from Antigravity's own release manifest, the pair its installer
+        # checks. --strict fails on any warning, which is the Marketplace's
+        # bar. It needs no sign-in.
+        env:
+          AGY_URL: https://storage.googleapis.com/antigravity-public/antigravity-cli/1.5.6-6212266538958848/linux-x64/cli_linux_x64.tar.gz
+          AGY_SHA512: 0c67824908caf9cc3156699802b8097f2fd02c4608ae9293c9aa7f17e1bcd342c4b9c2e158388253a37804ef6bd9c6b1d25cfaca3c07bbb7587378fc91839bb4
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/agy.tar.gz" "$AGY_URL"
+          echo "$AGY_SHA512  $RUNNER_TEMP/agy.tar.gz" | sha512sum -c -
+          tar -xzf "$RUNNER_TEMP/agy.tar.gz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/antigravity" plugin validate . --strict
+
+  notify:
+    needs: [validate]
+    if: failure() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Post to the alerts channel
+        env:
+          ALERTS_WEBHOOK: ${{ secrets.ALERTS_WEBHOOK }}
+        run: |
+          MESSAGE="🔴 antigravity validate failed on $GITHUB_REF_NAME"
+          [ -n "$ALERTS_WEBHOOK" ] || { echo "::error::ALERTS_WEBHOOK is not set on this repository, so this outcome reached nobody"; exit 1; }
+          curl --fail-with-body -sS --form-string "content=$MESSAGE <$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID>" "$ALERTS_WEBHOOK"

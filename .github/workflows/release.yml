@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: The tagged commit is on main
+        # A release is what main holds: a tag on an unmerged commit would
+        # publish a Release nobody merged.
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      - name: validate.yml passed on the tagged commit
+        # The one gate, read rather than restated: validate.yml runs
+        # Antigravity's own validator, and a Release needs a successful run
+        # of that workflow on this exact commit.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          passed=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/validate.yml/runs?head_sha=$GITHUB_SHA&status=success" --jq '.total_count')
+          [ "$passed" -gt 0 ] || { echo "::error::validate has not passed on $GITHUB_SHA: merge to main, wait for it, then tag"; exit 1; }
+
+      - name: The tag is the manifest's version
+        run: |
+          v=$(jq -r .version plugin.json)
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "::error::plugin.json is $v, but the tag is $GITHUB_REF_NAME"; exit 1; }
+
+  release:
+    needs: [check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+
+  notify:
+    needs: [check, release]
+    if: failure() && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Post to the alerts channel
+        env:
+          ALERTS_WEBHOOK: ${{ secrets.ALERTS_WEBHOOK }}
+        run: |
+          MESSAGE="🔴 antigravity release $GITHUB_REF_NAME failed. Repair: fix on development and tag again, or Re-run failed jobs if only the Release step failed."
+          [ -n "$ALERTS_WEBHOOK" ] || { echo "::error::ALERTS_WEBHOOK is not set on this repository, so this outcome reached nobody"; exit 1; }
+          curl --fail-with-body -sS --form-string "content=$MESSAGE <$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID>" "$ALERTS_WEBHOOK"

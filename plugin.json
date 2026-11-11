@@ -1,0 +1,33 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "shipstatic",
+  "displayName": "ShipStatic",
+  "version": "3.0.0",
+  "description": "Deploy static websites, landing pages, and prototypes instantly from Antigravity. Free, no account needed.",
+  "logo": "assets/logo.png",
+  "author": {
+    "name": "ShipStatic",
+    "email": "hello@shipstatic.com",
+    "url": "https://shipstatic.com"
+  },
+  "homepage": "https://shipstatic.com",
+  "repository": "https://github.com/shipstatic/antigravity",
+  "license": "MIT",
+  "keywords": [
+    "shipstatic",
+    "deploy",
+    "hosting",
+    "static-site",
+    "static-hosting",
+    "web-hosting",
+    "website",
+    "publish",
+    "mcp",
+    "agent"
+  ],
+  "suggestedPrompts": [
+    "Publish this with ShipStatic.",
+    "Publish this with ShipStatic's built-in password protection.",
+    "Show me my ShipStatic sites."
+  ]
+}
